@@ -1,53 +1,40 @@
+import os
 from google import genai
-import requests
-import json
+import yfinance as yf
+import pandas as pd
+from datetime import datetime
 
-# Setup
-client = genai.Client(api_key="AIzaSyAvDQpB08Jk8QgGknRjj_Nn4Arx8o7ybpw")
-NEWS_API_KEY = "0991e3b04e3247cc8c13a6ec12d2fe86" # Get one for free at newsapi.org
+# 1. Setup Client (GitHub will 'inject' the API Key here later)
+api_key = os.environ.get("GEMINI_API_KEY")
+client = genai.Client(api_key=api_key)
 
-def get_realtime_sentiment(ticker):
-    print(f"--- Fetching Live Sentiment for {ticker} ---")
+def run_sentiment_check(ticker_symbol):
+    # Fetch free news from yfinance
+    ticker = yf.Ticker(ticker_symbol)
+    news = ticker.news[:5]
     
-    # 1. Get Live News
-    url = f'https://newsapi.org/v2/everything?q={ticker}&language=en&sortBy=publishedAt&pageSize=10&apiKey={NEWS_API_KEY}'
-    response = requests.get(url).json()
-    articles = response.get('articles', [])
+    headlines = [n['title'] for n in news]
     
-    if not articles:
-        return "No recent news found for this ticker."
-
-    # 2. Prepare Data for Gemini
-    news_feed = ""
-    for i, a in enumerate(articles):
-        news_feed += f"{i+1}. {a['title']} - {a['description']}\n\n"
-
-    # 3. The "Sentiment Logic" Prompt
-    prompt = f"""
-    You are a Quantitative Sentiment Analyst for the S&P 500. 
-    Analyze these 10 news headlines for {ticker}:
+    prompt = f"Analyze these headlines for {ticker_symbol} and give a sentiment score (-1 to 1). Be concise: {headlines}"
     
-    {news_feed}
-    
-    TASK:
-    1. Assign a 'Fear & Greed' score from -100 (Extreme Fear) to +100 (Extreme Greed).
-    2. Categorize the sentiment into: 'Bullish', 'Neutral', or 'Bearish'.
-    3. EXPLAIN the 'Why': What is the single biggest narrative driving this score?
-    4. IMPACT ON MULTIPLES: Does this sentiment suggest the P/E ratio should expand or contract?
-    5. Include sources used
-    6. Create an overall sentiment score out of 10 with 10 being the best an 0 the worst
-    
-    Provide the output in a clean, professional bulletin format.
-    """
-
-    # 4. Generate Analysis
-    analysis = client.models.generate_content(
+    response = client.models.generate_content(
         model="gemini-3-flash-preview", 
         contents=prompt
     )
     
-    return analysis.text
+    # Create a simple data row
+    new_data = {
+        "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "Ticker": ticker_symbol,
+        "Score": response.text.strip()
+    }
+    return new_data
 
-# --- RUN THE TRACKER ---
-ticker_to_track = "CRWD" # Try "KO", "AAPL", or "TSLA"
-print(get_realtime_sentiment(ticker_to_track))
+# Run for your main watch list
+stocks = ["NVDA", "CRWD", "KO"]
+results = [run_sentiment_check(s) for s in stocks]
+
+# Save to a CSV file (This creates a historical record)
+df = pd.DataFrame(results)
+df.to_csv("sentiment_history.csv", mode='a', header=not os.path.exists("sentiment_history.csv"), index=False)
+print("Analysis complete and saved to sentiment_history.csv")
