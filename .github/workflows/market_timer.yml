@@ -1,0 +1,29 @@
+name: Market Sentiment Automation
+on:
+  schedule:
+    - cron: '30 13 * * 1-5' # 6:30 AM PT (Mon-Fri)
+    - cron: '0 20 * * 1-5'  # 1:00 PM PT (Mon-Fri)
+  workflow_dispatch: # This lets you run it manually to test!
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Dependencies
+        run: pip install google-genai yfinance pandas
+      - name: Run Analysis
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python sentiment_agent.py
+      - name: Commit Results
+        run: |
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add sentiment_history.csv
+          git commit -m "Update sentiment data" || echo "No changes to commit"
+          git push
